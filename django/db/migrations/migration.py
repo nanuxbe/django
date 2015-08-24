@@ -41,6 +41,10 @@ class Migration(object):
     # are not applied.
     replaces = []
 
+    # Application name of the application this migration will be applied to
+    # Leave as None to migrate current application
+    migrated_app = None
+
     # Is this an initial migration? Initial migrations are skipped on
     # --fake-initial if the table or fields already exist. If None, check if
     # the migration has any dependencies to determine if there are dependencies
@@ -56,6 +60,8 @@ class Migration(object):
         self.dependencies = list(self.__class__.dependencies)
         self.run_before = list(self.__class__.run_before)
         self.replaces = list(self.__class__.replaces)
+        if self.migrated_app is None:
+            self.migrated_app = self.app_label
 
     def __eq__(self, other):
         if not isinstance(other, Migration):
@@ -85,7 +91,7 @@ class Migration(object):
             new_state = project_state.clone()
 
         for operation in self.operations:
-            operation.state_forwards(self.app_label, new_state)
+            operation.state_forwards(self.migrated_app, new_state)
         return new_state
 
     def apply(self, project_state, schema_editor, collect_sql=False):
@@ -112,15 +118,15 @@ class Migration(object):
                     continue
             # Save the state before the operation has run
             old_state = project_state.clone()
-            operation.state_forwards(self.app_label, project_state)
+            operation.state_forwards(self.migrated_app, project_state)
             # Run the operation
             if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
                 # We're forcing a transaction on a non-transactional-DDL backend
                 with atomic(schema_editor.connection.alias):
-                    operation.database_forwards(self.app_label, schema_editor, old_state, project_state)
+                    operation.database_forwards(self.migrated_app, schema_editor, old_state, project_state)
             else:
                 # Normal behaviour
-                operation.database_forwards(self.app_label, schema_editor, old_state, project_state)
+                operation.database_forwards(self.migrated_app, schema_editor, old_state, project_state)
         return project_state
 
     def unapply(self, project_state, schema_editor, collect_sql=False):
@@ -148,7 +154,7 @@ class Migration(object):
             # over all operations
             new_state = new_state.clone()
             old_state = new_state.clone()
-            operation.state_forwards(self.app_label, new_state)
+            operation.state_forwards(self.migrated_app, new_state)
             to_run.insert(0, (operation, old_state, new_state))
 
         # Phase 2
@@ -166,10 +172,10 @@ class Migration(object):
             if not schema_editor.connection.features.can_rollback_ddl and operation.atomic:
                 # We're forcing a transaction on a non-transactional-DDL backend
                 with atomic(schema_editor.connection.alias):
-                    operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
+                    operation.database_backwards(self.migrated_app, schema_editor, from_state, to_state)
             else:
                 # Normal behaviour
-                operation.database_backwards(self.app_label, schema_editor, from_state, to_state)
+                operation.database_backwards(self.migrated_app, schema_editor, from_state, to_state)
         return project_state
 
 
